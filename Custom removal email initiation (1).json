@@ -1,0 +1,1068 @@
+{
+  "name": "Custom removal email initiation",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "=https://custom-removals-api.prdbe.conigni.com/api/admin/v1/custom-removals?page={{ $('Merge Pagination Data').item.json.currentPage }}&limit=40",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "states",
+              "value": "in_review"
+            },
+            {
+              "name": "orderBy",
+              "value": "createdAt:asc"
+            },
+            {
+              "name": "suspended",
+              "value": "false"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('token').item.json.access_token}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3424,
+        1152
+      ],
+      "id": "6beaa5bd-8b31-4c20-9d8a-58818a36f849",
+      "name": "HTTP Request",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://auth.incogni.com/realms/incogni/protocol/openid-connect/token",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "client_id",
+              "value": "automation-agent-client"
+            },
+            {
+              "name": "client_secret",
+              "value": "gQs563m9C58fU5Sg5KZTYLk4SraTkSfA"
+            },
+            {
+              "name": "scope",
+              "value": "openid"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3248,
+        1152
+      ],
+      "id": "fc5def74-f7c7-4676-b74f-5bbba0c5f6d5",
+      "name": "token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code Node - Split Items into Separate Rows\nconst items = $json.data;\n\nreturn items.map(item => ({\n  json: item\n}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3616,
+        1152
+      ],
+      "id": "cf63ebf1-b73d-485e-9aa3-f574e64c2fbc",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiItems = $input.all();\nconst results = [];\n\nfor (const apiItem of apiItems) {\n  const itemData = apiItem.json;\n\n  results.push({\n    json: {\n      adminData: itemData.adminData || {},\n      domainInfo: itemData.domainInfo || {},\n      contactEmail: itemData.contactEmail || '',\n      submissionMethod: itemData.submissionMethod || '',\n      domain: itemData.domainInfo?.Domain || '',\n      status: 'matched'\n    }\n  });\n}\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4352,
+        1152
+      ],
+      "id": "f4feed2d-a8d7-401a-867c-495e71f712cf",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "url": "=https://core-private-data-api.prdbe.conigni.com/api/admin/v1/snapshots/{{ $json.adminData.snapshotId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('token').first().json.access_token }}"
+            },
+            {
+              "name": "X-Tenant",
+              "value": "incogni"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4528,
+        1152
+      ],
+      "id": "a713322d-ee6f-4621-a0b2-d6e8daa4c48e",
+      "name": "HTTP Request1",
+      "executeOnce": false,
+      "alwaysOutputData": false,
+      "retryOnFail": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const snapshotData = $input.item.json;\n\n// Recover adminData and domainInfo from Code in JavaScript1 (lost when HTTP Request1 replaced $json)\nconst code1Items = $('Code in JavaScript1').all();\nconst code1Item = code1Items[$itemIndex];\nconst adminData = code1Item?.json?.adminData || {};\nconst domainInfo = code1Item?.json?.domainInfo || {};\n\n// --- TEMPLATE SELECTION ---\nconst subjectSnapshot = snapshotData.subjectSnapshot || {};\nconst addresses = snapshotData.addressSnapshots || [];\nconst principalAddress = addresses.find(addr => addr.metadata && addr.metadata.principal) || addresses[0] || {};\nconst state = (principalAddress.state || '').toLowerCase().trim();\nconst country = (principalAddress.country || '').toLowerCase().trim();\n\nconst privacyStates = {\n  'california': 'California', 'ca': 'California',\n  'colorado': 'Colorado', 'co': 'Colorado',\n  'utah': 'Utah', 'ut': 'Utah',\n  'virginia': 'Virginia', 'va': 'Virginia',\n  'connecticut': 'Connecticut', 'ct': 'Connecticut',\n  'oregon': 'Oregon', 'or': 'Oregon',\n  'texas': 'Texas', 'tx': 'Texas',\n  'new jersey': 'New Jersey', 'newjersey': 'New Jersey', 'nj': 'New Jersey',\n  'new hampshire': 'New Hampshire', 'newhampshire': 'New Hampshire', 'nh': 'New Hampshire',\n  'nebraska': 'Nebraska', 'ne': 'Nebraska',\n  'montana': 'Montana', 'mt': 'Montana',\n  'iowa': 'Iowa', 'ia': 'Iowa',\n  'delaware': 'Delaware', 'de': 'Delaware',\n  'florida': 'Florida', 'fl': 'Florida',\n  'tennessee': 'Tennessee', 'tn': 'Tennessee',\n  'minnesota': 'Minnesota', 'mn': 'Minnesota',\n  'maryland': 'Maryland', 'md': 'Maryland',\n    'indiana': 'Indiana', 'in': 'Indiana'\n};\n\nconst euCountries = ['austria', 'belgium', 'bulgaria', 'croatia', 'cyprus', 'czech republic',\n  'denmark', 'estonia', 'finland', 'france', 'germany', 'greece', 'hungary', 'ireland',\n  'italy', 'latvia', 'lithuania', 'luxembourg', 'malta', 'netherlands', 'poland',\n  'portugal', 'romania', 'slovakia', 'slovenia', 'spain', 'sweden',\n  'at', 'be', 'bg', 'hr', 'cy', 'cz', 'dk', 'ee', 'fi', 'fr', 'de', 'gr', 'hu',\n  'ie', 'it', 'lv', 'lt', 'lu', 'mt', 'nl', 'pl', 'pt', 'ro', 'sk', 'si', 'es',\n  'se', 'ch', 'gb', 'no', 'is', 'li'];\n\nlet templateRegion = 'California';\nif (country === 'canada' || country === 'ca') {\n  templateRegion = privacyStates[state] || 'Canada';\n} else if (euCountries.includes(country)) {\n  templateRegion = 'EU';\n} else if (country === 'us' || country === 'usa' || country === 'united states') {\n  templateRegion = privacyStates[state] || 'California';\n}\n\nconst templateRow = $('Get row(s) in sheet1').first().json;\nconst template = templateRow[templateRegion] || templateRow['California'] || 'Template not found';\n\n// --- FULL ADDRESS DOMAIN LIST ---\nconst fullAddressDomains = [\n  'checkr.com',\n  'rocketreach.co',\n  'peekyou.com',\n  'checkpeople.com',\n  'homes.com',\n  'zoominfo.com',\n  'radaris.com',\n  'unmask.com',\n  'freepeoplesearch.com',\n  'veripages.com',\n  'beenverified.com',\n  'information.com',\n  'dnb.com',\n  'bizprofile.net',\n  'hudwayglass.com',\n  'nuwber.com',\n  'theorg.com',\n  'sync.me',\n  'backgroundcheck.run',\n  'realtor.com',\n  'datanyze.com',\n  'buildzoom.com',\n  'android.nextdoor.com',\n  '192.com',\n  'chkppl.com',\n  'secure.192.com',\n  'crunchbase.com',\n  'buzzfile.com',\n  'hitta.se',\n  'annuaire.118000.fr',\n  'doximity.com',\n  'experience.com',\n  'city-data.com',\n  'yellowbook.com',\n  'health.information.com',\n  'adapt.io',\n  'scribd.com',\n  'www4.lead411.com',\n  'htrk1.beenverified.com',\n  'neverbounce.com',\n  'us.nextdoor.com',\n  'api.us.nextdoor.com',\n  'nextdoor.com',\n  'xing.com',\n  'meritpages.com',\n  'test01.yellowbook.com',\n  'bloomberg.com',\n  'nextdoor.co.uk',\n  'yellowbook.beenverified.com',\n  'searchportal.information.com',\n  'gulesider.no',\n  'oregon.ourstates.org',\n  'jumptracker.com',\n  'colorado.ourstates.org',\n  'connecticut.ourstates.org',\n  'michigan.ourstates.org',\n  'maryland.ourstates.org',\n  'massachusetts.ourstates.org',\n  'missouri.ourstates.org',\n  'florida.ourstates.org',\n  'california.ourstates.org',\n  'arizona.ourstates.org',\n  'alabama.ourstates.org',\n  'wisconsin.ourstates.org',\n  'kentucky.ourstates.org',\n  'newyork.ourstates.org',\n  'oklahoma.ourstates.org',\n  'rhodeisland.ourstates.org',\n  'georgia.ourstates.org',\n  'ohio.ourstates.org',\n  'arkansas.ourstates.org',\n  'utah.ourstates.org',\n  'texas.ourstates.org',\n  'illinois.ourstates.org',\n  'pennsylvania.ourstates.org',\n  'northcarolina.ourstates.org',\n  'nevada.ourstates.org',\n  'alaska.ourstates.org',\n  'cocofinder.com',\n  'mylife.com',\n  'reunion.com',\n  'thread.for.more.information.com',\n  'secure.information.com',\n];\n\nconst currentDomain = (domainInfo['Domain'] || adminData.url || '').toLowerCase()\n  .replace(/^https?:\\/\\//, '')\n  .replace(/^www\\./, '')\n  .split('/')[0]\n  .split('?')[0]\n  .trim();\n\nconst useFullAddress = fullAddressDomains.includes(currentDomain);\n\n// --- TEMPLATE FILLING ---\nconst fullName = `${subjectSnapshot.firstName || ''} ${subjectSnapshot.lastName || ''}`.trim();\n\nlet formattedAddress = '';\nif (addresses && addresses.length > 0) {\n  if (useFullAddress) {\n    formattedAddress = addresses.map(addr => {\n      return [addr.address || '', addr.address2 || '', addr.city || '',\n        addr.state || '', addr.zipCode || '', addr.country || ''\n      ].filter(part => part !== '').join(', ');\n    }).join('\\n');\n  } else {\n    const uniquePartialAddresses = new Set();\n    addresses.forEach(addr => {\n      const countryRaw = (addr.country || principalAddress.country || '').toString().trim().toLowerCase();\n      const isUS = ['us', 'usa', 'united states', 'united states of america'].includes(countryRaw);\n      const city = addr.city || '';\n      const st = addr.state || '';\n      const ctry = addr.country || principalAddress.country || '';\n      const partialAddress = isUS\n        ? [city, st].filter(p => p !== '').join(', ')\n        : [city, ctry].filter(p => p !== '').join(', ');\n      if (partialAddress) uniquePartialAddresses.add(partialAddress);\n    });\n    formattedAddress = Array.from(uniquePartialAddresses).join('\\n');\n  }\n} else {\n  const countryRaw = (principalAddress.country || '').toString().trim().toLowerCase();\n  const isUS = ['us', 'usa', 'united states', 'united states of america'].includes(countryRaw);\n  const addressParts = useFullAddress\n    ? [principalAddress.address || '', principalAddress.address2 || '', principalAddress.city || '', principalAddress.state || '', principalAddress.zipCode || '', principalAddress.country || ''].filter(p => p !== '')\n    : isUS\n      ? [principalAddress.city || '', principalAddress.state || ''].filter(p => p !== '')\n      : [principalAddress.city || '', principalAddress.country || ''].filter(p => p !== '');\n  formattedAddress = addressParts.join(', ');\n}\n\nconst url = adminData.url || '';\nconst recipientEmail = domainInfo['Email/Form for submission'] || '';\n\nlet filledTemplate = template;\nfilledTemplate = filledTemplate\n  .replace(/Full name\\s*-\\s*[\\n\\r]*/g, `Full name - ${fullName}\\n\\n`)\n  .replace(/Home address\\s*-\\s*[\\n\\r]*/g, `Home address - ${formattedAddress}\\n\\n`)\n  .replace(/this URL \\(\\)/g, `this URL (${url})`)\n  .replace(/accessible via this URL \\(\\)/g, `accessible via this URL (${url})`);\n\nreturn {\n  json: {\n    ...snapshotData,\n    adminData: adminData,\n    domainInfo: domainInfo,\n    templateRegion: templateRegion,\n    emailTemplate: template,\n    filledEmailTemplate: filledTemplate,\n    filledEmailTemplateHtml: filledTemplate.replace(/\\n/g, '<br>'),\n    recipientEmail: recipientEmail,\n    fullName: fullName,\n    fullAddress: formattedAddress,\n    url: url,\n    detectedState: state.toUpperCase(),\n    detectedCountry: country.toUpperCase()\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4688,
+        1152
+      ],
+      "id": "1f91c133-dc85-494e-87df-f9c02c3ae78d",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "url": "=https://api.incogni.com/api/admin/v1/subjects/{{ $json.adminData.subjectId }}/snapshots/{{ $json.adminData.snapshotId }}/authorization_form_consent/download",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {}
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('token').first().json.access_token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5072,
+        1152
+      ],
+      "id": "587d1342-4685-4d5a-a13f-48c94146b83e",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7c0651c8-4378-4998-80b7-0695bbca86cf",
+              "leftValue": "={{ $json.uuid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4848,
+        1152
+      ],
+      "id": "56e749b0-c97a-45b8-b921-358ea7f74e20",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get data from current node (already has all data from If1)\nconst data = $input.item.json;\nconst binary = $input.item.binary;\nconst template = data.emailTemplate;\n\n// Admin data and domain info\nconst adminData = data.adminData || {};\nconst domainInfo = data.domainInfo || {};\n\n// NEW: Snapshot-based structure\nconst subjectSnapshot = data.subjectSnapshot || {};\nconst addresses = data.addressSnapshots || [];\nconst principalAddress = addresses.find(addr => addr.metadata && addr.metadata.principal) || addresses[0] || {};\n\n// URL\nconst url = adminData.url || data.url || '';\n\n// Build full name\nconst fullName = `${subjectSnapshot.firstName || ''} ${subjectSnapshot.lastName || ''}`.trim();\n\n// --- FULL ADDRESS DOMAIN LIST ---\nconst fullAddressDomains = [\n  'checkr.com',\n  'rocketreach.co',\n  'peekyou.com',\n  'checkpeople.com',\n  'homes.com',\n  'zoominfo.com',\n  'radaris.com',\n  'unmask.com',\n  'freepeoplesearch.com',\n  'veripages.com',\n  'beenverified.com',\n  'information.com',\n  'dnb.com',\n  'bizprofile.net',\n  'hudwayglass.com',\n  'nuwber.com',\n  'theorg.com',\n  'sync.me',\n  'backgroundcheck.run',\n  'realtor.com',\n  'datanyze.com',\n  'buildzoom.com',\n  'android.nextdoor.com',\n  '192.com',\n  'chkppl.com',\n  'secure.192.com',\n  'crunchbase.com',\n  'buzzfile.com',\n  'hitta.se',\n  'annuaire.118000.fr',\n  'doximity.com',\n  'experience.com',\n  'city-data.com',\n  'yellowbook.com',\n  'health.information.com',\n  'adapt.io',\n  'scribd.com',\n  'www4.lead411.com',\n  'htrk1.beenverified.com',\n  'neverbounce.com',\n  'us.nextdoor.com',\n  'api.us.nextdoor.com',\n  'nextdoor.com',\n  'xing.com',\n  'meritpages.com',\n  'test01.yellowbook.com',\n  'bloomberg.com',\n  'nextdoor.co.uk',\n  'yellowbook.beenverified.com',\n  'searchportal.information.com',\n  'gulesider.no',\n  'oregon.ourstates.org',\n  'jumptracker.com',\n  'colorado.ourstates.org',\n  'connecticut.ourstates.org',\n  'michigan.ourstates.org',\n  'maryland.ourstates.org',\n  'massachusetts.ourstates.org',\n  'missouri.ourstates.org',\n  'florida.ourstates.org',\n  'california.ourstates.org',\n  'arizona.ourstates.org',\n  'alabama.ourstates.org',\n  'wisconsin.ourstates.org',\n  'kentucky.ourstates.org',\n  'newyork.ourstates.org',\n  'oklahoma.ourstates.org',\n  'rhodeisland.ourstates.org',\n  'georgia.ourstates.org',\n  'ohio.ourstates.org',\n  'arkansas.ourstates.org',\n  'utah.ourstates.org',\n  'texas.ourstates.org',\n  'illinois.ourstates.org',\n  'pennsylvania.ourstates.org',\n  'northcarolina.ourstates.org',\n  'nevada.ourstates.org',\n  'alaska.ourstates.org',\n  'cocofinder.com',\n  'mylife.com',\n  'reunion.com',\n  'thread.for.more.information.com',\n  'secure.information.com',\n];\n\n// Address logic - use domain list instead of deprecated 'Info shared' spreadsheet field\nconst currentDomain = (domainInfo['Domain'] || adminData.url || data.url || '').toLowerCase()\n  .replace(/^https?:\\/\\//, '')\n  .replace(/^www\\./, '')\n  .split('/')[0]\n  .split('?')[0]\n  .trim();\n\nconst useFullAddress = fullAddressDomains.includes(currentDomain);\n\nlet formattedAddress = '';\n\nif (addresses && addresses.length > 0) {\n  if (useFullAddress) {\n    formattedAddress = addresses.map(addr => {\n      return [\n        addr.address || '',\n        addr.address2 || '',\n        addr.city || '',\n        addr.state || '',\n        addr.zipCode || '',\n        addr.country || ''\n      ].filter(part => part !== '').join(', ');\n    }).join('\\n');\n  } else {\n    const uniquePartialAddresses = new Set();\n    addresses.forEach(addr => {\n      const countryRaw = (addr.country || principalAddress.country || '').toString().trim().toLowerCase();\n      const isUS = ['us', 'usa', 'united states', 'united states of america'].includes(countryRaw);\n      const city = addr.city || '';\n      const state = addr.state || '';\n      const country = addr.country || principalAddress.country || '';\n      const partialAddress = isUS\n        ? [city, state].filter(p => p !== '').join(', ')\n        : [city, country].filter(p => p !== '').join(', ');\n      if (partialAddress) uniquePartialAddresses.add(partialAddress);\n    });\n    formattedAddress = Array.from(uniquePartialAddresses).join('\\n');\n  }\n} else {\n  formattedAddress = 'No address available';\n}\n\nconst recipientEmail = domainInfo['Email/Form for submission'] || '';\n\n// Generate unique ID\nconst chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';\nconst hashSource = `${Date.now()}${$itemIndex}${Math.random()}${Math.random()}`;\nlet hash = 0;\nfor (let i = 0; i < hashSource.length; i++) {\n  hash = ((hash << 5) - hash) + hashSource.charCodeAt(i);\n  hash = hash & hash;\n}\nhash = Math.abs(hash);\nlet uniqueId = 'ID-';\nfor (let i = 0; i < 7; i++) {\n  uniqueId += chars[Math.floor((hash / Math.pow(10, i)) % chars.length)];\n}\n\nlet filledTemplate = template;\nfilledTemplate = filledTemplate\n  .replace(/Full name\\s*-\\s*\\n/g, `Full name - ${fullName}\\n\\n`)\n  .replace(/Home address\\s*-\\s*\\n/g, `Home address - \\n${formattedAddress}\\n\\n`)\n  .replace(/this URL \\(\\)/g, `this URL (${url})`)\n  .replace(/accessible via this URL \\(\\)/g, `accessible via this URL (${url})`);\n\nreturn {\n  json: {\n    ...data,\n    generatedId: uniqueId,\n    generatedAt: new Date().toISOString(),\n    filledEmailTemplate: filledTemplate,\n    filledEmailTemplateHtml: filledTemplate.replace(/\\n/g, '<br>'),\n    recipientEmail: recipientEmail,\n    fullName: fullName,\n    fullAddress: formattedAddress,\n    url: url\n  },\n  binary: binary\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5264,
+        1152
+      ],
+      "id": "bf353068-b7b1-47a8-a5d0-bec5afb1cd13",
+      "name": "Code in JavaScript4"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.recipientEmail }}",
+        "subject": "=Data removal request - {{ $json.fullName }} [{{ $json.generatedId }}]\n",
+        "message": "={{ $json.filledEmailTemplateHtml }}",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        5456,
+        1152
+      ],
+      "id": "65c50f4b-70c8-4199-998d-7f76079fc20f",
+      "name": "Send a message",
+      "webhookId": "949894d1-60bf-4432-b27b-52a04dbaa876",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "HuE9BjMKMt1Uhmc2",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ \"https://custom-removals-api.prdbe.conigni.com/api/admin/v1/custom-removals/\" + $('Code in JavaScript1').all()[$itemIndex].json.adminData.uuid }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('token').first().json.access_token }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n \"state\": \"in_progress\",\n  \"stateReasonUuid\": \"4ee608a5-2e8d-43ca-8b91-c634ea2d57fc\",\n  \"submissionType\": \"email\",\n  \"followUpAt\": \"{{ new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}\",\n  \"externalId\": \"{{ $('Code in JavaScript4').all()[$itemIndex].json.generatedId }}\",\n  \"removalRequestedAt\": \"{{ $today.format('yyyy-MM-dd') }}\",\n  \"assigneeUuid\": \"5b4cb604-c4ac-4e44-8546-7d41185f1f69\",\n  \"submittedTo\": \"{{ $('Code in JavaScript4').all()[$itemIndex].json.recipientEmail }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        5856,
+        1152
+      ],
+      "id": "2a9c0cce-f02b-41af-ac83-34baf2654caf",
+      "name": "HTTP Request3",
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo",
+          "mode": "list",
+          "cachedResultName": "Custom Removals tracking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Requests",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "URL": "={{ $('Code in JavaScript4').item.json.adminData.url }}",
+            "Email/Form for submission": "={{ $('Code in JavaScript4').item.json.recipientEmail }}",
+            "Email ID": "={{ $('Code in JavaScript4').item.json.generatedId }}",
+            "Submission date": "={{ $today.format('yyyy-MM-dd') }}",
+            "Owner": "Automation",
+            "Status": "In progress",
+            "1st FU": "={{ new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}",
+            "2nd FU": "={{ new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}",
+            "3rd FU": "={{ new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}",
+            "Close": "={{ new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0] }}",
+            "Subject UUID": "={{ $('Code in JavaScript4').item.json.adminData.subjectId }}"
+          },
+          "matchingColumns": [
+            "URL"
+          ],
+          "schema": [
+            {
+              "id": "Subject UUID",
+              "displayName": "Subject UUID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "URL",
+              "displayName": "URL",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Email/Form for submission",
+              "displayName": "Email/Form for submission",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email ID",
+              "displayName": "Email ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Form ID",
+              "displayName": "Form ID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Submission date",
+              "displayName": "Submission date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Owner",
+              "displayName": "Owner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "1st FU",
+              "displayName": "1st FU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "2nd FU",
+              "displayName": "2nd FU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "3rd FU",
+              "displayName": "3rd FU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Close",
+              "displayName": "Close",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "next step date",
+              "displayName": "next step date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Beta",
+              "displayName": "Beta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        5648,
+        1152
+      ],
+      "id": "f6757dcd-655e-4f66-a65f-257e565458d9",
+      "name": "Append row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "g8s7z9dzV8TpP98i",
+          "name": "Google Sheets account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst batchCount = $input.all().length;\nstaticData.emailsSent = (staticData.emailsSent || 0) + batchCount;\nconst totalSent = staticData.emailsSent;\n\nconst currentPage = $node[\"Merge Pagination Data\"].json.currentPage || 1;\nconst maxPages = parseInt($node[\"Merge Pagination Data\"].json.maxPages) || 20;\n\nif (totalSent >= 200 || currentPage >= maxPages) {\n  return [{\n    json: {\n      stopProcessing: true,\n      totalEmailsSent: totalSent,\n      message: totalSent >= 200 \n        ? `Reached email limit: ${totalSent} emails sent` \n        : `Checked ${maxPages} pages, sent ${totalSent} emails total`\n    }\n  }];\n}\n\nreturn [{\n  json: {\n    currentPage: currentPage,\n    nextPage: currentPage + 1,\n    maxPages: maxPages,\n    emailsSent: totalSent,\n    stopProcessing: false,\n    message: `Sent ${batchCount} this batch (${totalSent} total), continuing to next page`\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6128,
+        1152
+      ],
+      "id": "01b2092c-bd97-4b6c-b3ba-739d13bb5628",
+      "name": "Check Results and Pagination"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        3040,
+        1152
+      ],
+      "id": "641290b9-9f6b-4cf4-a225-4079f9a3a4a2",
+      "name": "Merge Pagination Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9db2366e-9f4c-4a45-a0d6-6a87ea947a9f",
+              "name": "currentPage",
+              "value": "={{ $json[\"nextPage\"] }}",
+              "type": "number"
+            },
+            {
+              "id": "8a7a2754-6678-4b31-8c12-4a414bf824e8",
+              "name": "maxPages",
+              "value": "={{ $if($(\"Check Results and Pagination\").isExecuted, $(\"Check Results and Pagination\").first().json.maxPages, $(\"All Skipped - Continue Pagination\").first().json.maxPages) }}",
+              "type": "number"
+            },
+            {
+              "id": "8e506eee-b4ff-4cf1-b488-2fc522118735",
+              "name": "emailsSent",
+              "value": "={{ $if($(\"Check Results and Pagination\").isExecuted, $(\"Check Results and Pagination\").first().json.emailsSent, $(\"All Skipped - Continue Pagination\").first().json.emailsSent) }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        6304,
+        1552
+      ],
+      "id": "8d3c2f5e-31aa-45e2-ba79-34477ceea495",
+      "name": "INCREMENT NODE"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ddca0ecd-7b8f-4cc8-85cc-9f4706b4210d",
+              "name": "currentPage",
+              "value": 370,
+              "type": "number"
+            },
+            {
+              "id": "97c7aa1b-2c77-42fa-9e20-21edac5850db",
+              "name": "=maxPages",
+              "value": "600",
+              "type": "string"
+            },
+            {
+              "id": "a99adcc7-8699-4bf5-b8ef-83b8bf00ebc8",
+              "name": "foundResults",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "a5ac6215-8f74-479c-bbc4-e86f5b38da38",
+              "name": "emailsSent",
+              "value": 0,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2832,
+        1152
+      ],
+      "id": "a30c132e-faad-41d9-8801-1396db367f8e",
+      "name": "Initialize Pagination"
+    },
+    {
+      "parameters": {
+        "url": "=https://custom-removals-api.prdbe.conigni.com/api/admin/v1/exposure-sources/{{ $json.exposureSourceUuid }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('token').first().json.access_token }}"
+            },
+            {
+              "name": "X-Tenant",
+              "value": "incogni"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        3808,
+        1152
+      ],
+      "id": "84ebf75b-e726-4351-bd5c-9af60b9966e9",
+      "name": "Fetch Exposure Source Details",
+      "executeOnce": false,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract contact information from exposure source API response\nconst exposureSource = $input.item.json;\n\n// Recover original admin data (lost after Fetch Exposure Source Details replaced $json)\nconst adminItem = $('Code in JavaScript').all()[$itemIndex];\nconst adminData = adminItem ? adminItem.json : {};\n\n// Check if manual handling is required\nconst manualHandlingRequired = exposureSource.manualHandlingRequired || false;\n\nif (manualHandlingRequired) {\n  return {\n    json: {\n      ...($input.item.json),\n      adminData: adminData,\n      domainInfo: null,\n      contactEmail: null,\n      submissionMethod: null,\n      submissionUrl: null,\n      manualHandlingRequired: true,\n      skipped: true,\n      skipReason: \"Manual handling required for this exposure source\"\n    }\n  };\n}\n\nconst email = exposureSource.email || '';\nconst formUrl = exposureSource.formUrl || '';\n\nif (!email && formUrl) {\n  return {\n    json: {\n      ...($input.item.json),\n      adminData: adminData,\n      domainInfo: null,\n      contactEmail: null,\n      submissionMethod: null,\n      submissionUrl: null,\n      skipped: true,\n      skipReason: \"Only form submission available, no email contact\"\n    }\n  };\n}\n\nif (!email) {\n  return {\n    json: {\n      ...($input.item.json),\n      adminData: adminData,\n      domainInfo: null,\n      contactEmail: null,\n      submissionMethod: null,\n      submissionUrl: null,\n      skipped: true,\n      skipReason: \"No email or form contact available\"\n    }\n  };\n}\n\nconst submissionMethod = email ? 'email' : 'form';\nconst submissionUrl = email ? '' : formUrl;\n\nconst domainInfo = {\n  'Domain': exposureSource.domain || exposureSource.title || '',\n  'Contact Email': email,\n  'Email/Form for submission': email,\n  'Submission Method': submissionMethod,\n  'Submission URL': submissionUrl,\n  'Info shared': exposureSource.infoShared || ''\n};\n\nreturn {\n  json: {\n    ...($input.item.json),\n    adminData: adminData,\n    domainInfo: domainInfo,\n    contactEmail: email,\n    submissionMethod: submissionMethod,\n    submissionUrl: submissionUrl,\n    manualHandlingRequired: false,\n    skipped: false\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        1152
+      ],
+      "id": "c36c2ed5-4a9e-446f-814c-eb55493a3921",
+      "name": "Extract Contact Info from API"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skipped }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4160,
+        1040
+      ],
+      "id": "9f3dfc83-eb58-43e3-922a-604aabdf4be8",
+      "name": "Skip Invalid Submissions"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo",
+          "mode": "list",
+          "cachedResultName": "Custom Removals tracking",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1729490183,
+          "mode": "list",
+          "cachedResultName": "Templates",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1OhEohlpMe8BU5fz3h9zjmN-mWL0mSKdT9lt8tGdSJLo/edit#gid=1729490183"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        4336,
+        800
+      ],
+      "id": "25ece0d5-c612-4692-a3ae-00df747bf7fa",
+      "name": "Get row(s) in sheet1",
+      "executeOnce": false,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "g8s7z9dzV8TpP98i",
+          "name": "Google Sheets account 7"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "74d103d4-eedb-4b91-9911-2dc334897945",
+              "leftValue": "={{ $json.stopProcessing }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        6576,
+        1040
+      ],
+      "id": "4ecce2c8-f3c0-4d42-9f8f-fd345a2a7435",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nconst totalSent = staticData.emailsSent || 0;\n\nconst currentPage = $node[\"Merge Pagination Data\"].json.currentPage || 1;\nconst maxPages = parseInt($node[\"Merge Pagination Data\"].json.maxPages) || 20;\n\nif (totalSent >= 200) {\n  return [{\n    json: {\n      stopProcessing: true,\n      totalEmailsSent: totalSent,\n      message: `Reached email limit: ${totalSent} emails sent`\n    }\n  }];\n}\n\nif (currentPage < maxPages) {\n  return [{\n    json: {\n      currentPage: currentPage,\n      nextPage: currentPage + 1,\n      maxPages: maxPages,\n      emailsSent: totalSent,\n      stopProcessing: false,\n      message: `All items skipped on page ${currentPage}, moving to next page`\n    }\n  }];\n} else {\n  return [{\n    json: {\n      stopProcessing: true,\n      totalEmailsSent: totalSent,\n      message: `All pages checked, sent ${totalSent} emails total`\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4352,
+        992
+      ],
+      "id": "e8b127b3-5fc6-447b-86a1-cdf5f9e2e754",
+      "name": "All Skipped - Continue Pagination"
+    },
+    {
+      "parameters": {
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nstaticData.emailsSent = 0;\nreturn $input.all();\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        1152
+      ],
+      "id": "6d684dde-bb02-4adb-b413-cf0be25013da",
+      "name": "Code in JavaScript3"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "=0 8,09,10,11,12,13 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        2432,
+        1040
+      ],
+      "id": "c0bac52b-7e37-48d1-bf2b-2c51dea97084",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "token": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Fetch Exposure Source Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript4": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a message": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "Check Results and Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append row in sheet": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Results and Pagination": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Pagination Data": {
+      "main": [
+        [
+          {
+            "node": "token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "INCREMENT NODE": {
+      "main": [
+        [
+          {
+            "node": "Merge Pagination Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Initialize Pagination": {
+      "main": [
+        [
+          {
+            "node": "Merge Pagination Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Exposure Source Details": {
+      "main": [
+        [
+          {
+            "node": "Extract Contact Info from API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Contact Info from API": {
+      "main": [
+        [
+          {
+            "node": "Skip Invalid Submissions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Invalid Submissions": {
+      "main": [
+        [
+          {
+            "node": "All Skipped - Continue Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [],
+        [
+          {
+            "node": "INCREMENT NODE",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "All Skipped - Continue Pagination": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript3": {
+      "main": [
+        [
+          {
+            "node": "Initialize Pagination",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript3",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get row(s) in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed"
+  },
+  "versionId": "2166506f-c83b-4da9-a732-258299f88b9b",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "d165545424d6c4d6cfe34c0d11e9fd86ce137e6cf08622369077d2a993baa2c4"
+  },
+  "id": "wu6u0qBNfmlRazbp",
+  "tags": []
+}
